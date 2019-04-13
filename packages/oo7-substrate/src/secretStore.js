@@ -20,8 +20,8 @@ let srCache = {}
 function chainCodeFor(x) {
 	let r = encode(x)
 	if (r.length <= 32) {
-		r = [...encode(x)]
-		for (let i = r.length; i < 32; ++i) {
+		r = [...r]
+		while (r.length < 32) {
 			r.push(0)
 		}
 		r = new Uint8Array(r)
@@ -51,9 +51,13 @@ function edSeedFromUri(uri) {
 				let rest = m[3];
 				while (rest != '') {
 					let m = rest.match(/^\/(\/?)([^\/]*)(\/.*)?$/)
+					if (m[2].match(/^[0-9]+$/)) {
+						m[2] = +m[2]
+					}
+					let cc = chainCodeFor(m[2])
 					if (m[1] == '/') {
 						// hard key -all good
-						seed = deriveHardJunction(seed, chainCodeFor(m[2]))
+						seed = deriveHardJunction(seed, cc)
 					} else {
 						throw "Soft key"
 					}
@@ -83,7 +87,7 @@ function srKeypairToSecret(pair) {
 function srKeypairFromUri(uri) {
 	if (!srCache[uri]) {
 		if (uri.match(/^0x[0-9a-fA-F]{64}$/)) {
-			cache[uri] = keypairFromSeed(hexToBytes(uri))
+			srCache[uri] = keypairFromSeed(hexToBytes(uri))
 		} else {
 			let m = uri.match(/^([a-z]+( [a-z]+){11})?((\/\/?[^\/]*)*)(\/\/\/(.*))?$/)
 			if (m) {
@@ -99,6 +103,9 @@ function srKeypairFromUri(uri) {
 				let rest = m[3];
 				while (rest != '') {
 					let m = rest.match(/^\/(\/?)([^\/]*)(\/.*)?$/)
+					if (m[2].match(/^[0-9]+$/)) {
+						m[2] = +m[2]
+					}
 					let cc = chainCodeFor(m[2])
 					if (m[1] == '/') {
 						pair = deriveKeypairHard(pair, cc)
@@ -244,7 +251,7 @@ class SecretStore extends Bond {
 			this._keys = JSON.parse(this._storage.secretStore)
 				.map(({keyData, seed, uri, phrase, name, type}) => ({
 					name,
-					keyData: hexToBytes(keyData || seed),
+					keyData: null,//hexToBytes(keyData || seed),
 					uri: uri || phrase,
 					type: type || ED25519
 				}))

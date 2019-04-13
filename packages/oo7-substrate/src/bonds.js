@@ -11,14 +11,14 @@ const debug = require('debug')('oo7-substrate:bonds')
 
 let chain = (() => {
 	let head = new SubscriptionBond('chain_newHead').subscriptable()
-	let finalisedHead = new SubscriptionBond('chain_finalisedHead').subscriptable()
+	let finalizedHead = new SubscriptionBond('chain_finalizedHead').subscriptable()
 	let height = head.map(h => new BlockNumber(h.number))
-	let finalisedHeight = finalisedHead.map(h => new BlockNumber(h.number))
-	let lag = Bond.all([height, finalisedHeight]).map(([h, f]) => new BlockNumber(h - f))
+	let finalizedHeight = finalizedHead.map(h => new BlockNumber(h.number))
+	let lag = Bond.all([height, finalizedHeight]).map(([h, f]) => new BlockNumber(h - f))
 	let header = hashBond => new TransformBond(hash => nodeService().request('chain_getHeader', [hash]), [hashBond]).subscriptable()
 	let block = hashBond => new TransformBond(hash => nodeService().request('chain_getBlock', [hash]), [hashBond]).subscriptable()
-	let hash = numberBond => new TransformBond(number => nodeService().request('chain_getBlockHash', [number]), [numberBond])
-	return { head, finalisedHead, height, finalisedHeight, header, hash, block, lag }
+	let hash = numberBond => new TransformBond(number => nodeService().request('chain_getBlockHash', [number]).then(hexToBytes), [numberBond])
+	return { head, finalizedHead, height, finalizedHeight, header, hash, block, lag }
 })()
 
 let system = (() => {
@@ -95,14 +95,15 @@ function initialiseFromMetadata (md) {
 			m.storage.forEach(item => {
 				switch (item.type.option) {
 					case 'Plain': {
-						o[camel(item.name)] = new StorageBond(`${storePrefix} ${item.name}`, item.type.value, [], item.default)
+						o[camel(item.name)] = new StorageBond(`${storePrefix} ${item.name}`, item.type.value, [], item.modifier.option == 'Default' ? item.default : null)
 						break
 					}
 					case 'Map': {
 						let keyType = item.type.value.key
 						let valueType = item.type.value.value
+						let hasDefault = item.modifier.option == 'Default'
 						
-						o[camel(item.name)] = (keyBond, useDefault = true) => new TransformBond(
+						o[camel(item.name)] = (keyBond, useDefault = hasDefault) => new TransformBond(
 							key => new StorageBond(`${storePrefix} ${item.name}`, valueType, encode(key, keyType), useDefault ? item.default : null),
 							[keyBond]
 						).subscriptable()
@@ -180,6 +181,8 @@ function decodeMetadata(bytes) {
 		if (head.version == 1) {
 			return decode(input, 'MetadataBodyV1')
 		} else if (head.version == 2) {
+			return decode(input, 'MetadataBodyV2')
+		} else if (head.version == 3) {
 			return decode(input, 'MetadataBody')
 		} else {
 			throw `Metadata version ${head.version} not supported`
